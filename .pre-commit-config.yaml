@@ -1,0 +1,28 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-yaml
+      - id: check-json
+        exclude: ^\.vscode/
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: check-ha-manifest-key-order
+        name: check Home Assistant manifest key order
+        entry: >
+          bash -c 'for file in "$@"; do
+          jq -e '\''type == "object" and ((keys_unsorted) as $keys | ($keys[:2] == ["domain","name"]) and ($keys == (["domain","name"] + (($keys - ["domain","name"]) | sort))))'\'' "$file" > /dev/null
+          || { echo "$file: manifest keys must be domain, name, then alphabetical order"; exit 1; };
+          done' --
+        language: system
+        files: ^custom_components/[^/]+/manifest\.json$
+        pass_filenames: true

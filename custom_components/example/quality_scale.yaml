@@ -1,0 +1,4 @@
+rules:
+  config-flow: done
+  entity-unique-id: done
+  # Expand toward gold/platinum as the product integration matures.

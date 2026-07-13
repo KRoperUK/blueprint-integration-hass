@@ -1,0 +1,287 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      component: ${{ steps.filter.outputs.component }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            component:
+              - 'custom_components/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'pyproject.toml'
+              - 'requirements_test.txt'
+              - 'hacs.json'
+              - '.github/workflows/ci.yml'
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.component == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff mypy
+      - run: ruff check custom_components tests
+      - run: ruff format --check custom_components tests
+      - run: mypy
+      - run: bash scripts/test-dev-version-scripts.sh
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.component == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+      - run: pytest --cov=custom_components.example --cov-report=term-missing
+
+  hacs_validate:
+    needs: changes
+    if: needs.changes.outputs.component == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+      - uses: home-assistant/actions/hassfest@master
+
+  # Semver pre-releases — see docs/pre-releases.md (ported from dimplex-controller-hass).
+  dev-release:
+    needs: [changes, lint, test, hacs_validate]
+    if: >-
+      needs.changes.outputs.component == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Compute next version
+        id: nextver
+        uses: TriPSs/conventional-changelog-action@v6
+        with:
+          github-token: ${{ github.token }}
+          version-file: custom_components/example/manifest.json
+          version-path: version
+          tag-prefix: v
+          preset: conventionalcommits
+          skip-on-empty: true
+          skip-version-file: true
+          skip-commit: true
+          skip-tag: true
+          skip-git-pull: true
+          git-push: false
+          output-file: false
+      - name: Compute dev version and tag
+        id: tag
+        env:
+          SKIPPED: ${{ steps.nextver.outputs.skipped }}
+          NEXT_VERSION: ${{ steps.nextver.outputs.version }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHORT_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [ "$SKIPPED" = "true" ] || [ -z "$NEXT_VERSION" ]; then
+            VERSION=$(jq -r .version custom_components/example/manifest.json)
+          else
+            VERSION="$NEXT_VERSION"
+          fi
+          WORKFLOW_EVENT=pull_request
+          export VERSION HEAD_BRANCH PR_NUMBER SHORT_SHA RUN_ID WORKFLOW_EVENT
+          mapfile -t _dev_kv < <(bash scripts/compute-dev-tag.sh)
+          echo "${_dev_kv[0]}" >> "$GITHUB_OUTPUT"
+          echo "${_dev_kv[1]}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "base_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+      - name: Create pre-release
+        id: prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          DEV_VERSION: ${{ steps.tag.outputs.version }}
+          BRANCH_RAW: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          BASE_SHA: ${{ steps.tag.outputs.base_sha }}
+          BASE_VERSION: ${{ steps.tag.outputs.base_version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=50 2>/dev/null || true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha' 2>/dev/null || true)
+            object_type=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.type' 2>/dev/null || true)
+            if [ "$object_type" = "tag" ] && [ -n "$existing_sha" ]; then
+              existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${existing_sha}" --jq '.object.sha' 2>/dev/null || true)
+            fi
+            parent=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${existing_sha}" --jq '.parents[0].sha' 2>/dev/null || true)
+            if [ -n "$existing_sha" ] && [ "$parent" = "$BASE_SHA" ]; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            gh release delete "$TAG" --yes --cleanup-tag || true
+            git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+          fi
+          git reset --hard "$BASE_SHA"
+          SYNTHETIC_SHA=$(bash scripts/create-dev-version-commit.sh "$DEV_VERSION")
+          export COMMIT_SHA="$SYNTHETIC_SHA" TAG
+          git tag -f "$TAG" "$SYNTHETIC_SHA"
+          git push origin "refs/tags/${TAG}"
+          {
+            echo "> [!WARNING]"
+            echo "> **Automated pre-merge development build** from PR [#${PR_NUMBER}](${PR_URL})."
+            echo "> Integration version: \`${DEV_VERSION}\` (semver pre-release)."
+            echo ""
+            echo "- **Base commit:** \`${BASE_SHA}\`"
+            echo "- **Release tree:** \`${SYNTHETIC_SHA}\`"
+          } > pr-dev-notes.md
+          bash scripts/package-hacs-zip.sh example.zip
+          gh release create "$TAG" --prerelease --title "$TAG" --target "$SYNTHETIC_SHA" --notes-file pr-dev-notes.md example.zip
+          bash scripts/verify-dev-release-target.sh
+          echo "available=true" >> "$GITHUB_OUTPUT"
+      - name: Label PR as dev-release-cut
+        if: steps.prerelease.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create "dev-release-cut" --repo "$GITHUB_REPOSITORY" --color "5319e7" --description "A dev/RC pre-release was published for this PR" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "dev-release-cut"
+
+  dev-release-main:
+    needs: [changes, lint, test, hacs_validate]
+    if: >-
+      needs.changes.outputs.component == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, ': release ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Compute next version
+        id: nextver
+        uses: TriPSs/conventional-changelog-action@v6
+        with:
+          github-token: ${{ github.token }}
+          version-file: custom_components/example/manifest.json
+          version-path: version
+          tag-prefix: v
+          preset: conventionalcommits
+          skip-on-empty: true
+          skip-version-file: true
+          skip-commit: true
+          skip-tag: true
+          skip-git-pull: true
+          git-push: false
+          output-file: false
+      - name: Compute base version and RC number
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKIPPED: ${{ steps.nextver.outputs.skipped }}
+          NEXT_VERSION: ${{ steps.nextver.outputs.version }}
+        run: |
+          if [ "$SKIPPED" = "true" ] || [ -z "$NEXT_VERSION" ]; then
+            VERSION=$(jq -r .version custom_components/example/manifest.json)
+          else
+            VERSION="$NEXT_VERSION"
+          fi
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release list --limit 1000 --json tagName --jq '.[].tagName' \
+            | { grep -E "^(dev-)?v${VERSION}-rc\\.[0-9]+$" || true; } \
+            | while read -r tag; do gh release delete "$tag" --yes --cleanup-tag || true; done
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          RC_NUMBER=$(bash scripts/next-main-rc-number.sh "${VERSION}")
+          HEAD_BRANCH=main WORKFLOW_EVENT=push
+          export VERSION RC_NUMBER HEAD_BRANCH WORKFLOW_EVENT
+          mapfile -t _dev_kv < <(bash scripts/compute-dev-tag.sh)
+          echo "${_dev_kv[0]}" >> "$GITHUB_OUTPUT"
+          echo "${_dev_kv[1]}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "base_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "rc_number=${RC_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: Create pre-release
+        if: ${{ steps.tag.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          DEV_VERSION: ${{ steps.tag.outputs.version }}
+          BASE_VERSION: ${{ steps.tag.outputs.base_version }}
+          BASE_SHA: ${{ steps.tag.outputs.base_sha }}
+          RC_NUMBER: ${{ steps.tag.outputs.rc_number }}
+          CHANGELOG: ${{ steps.nextver.outputs.clean_changelog }}
+        run: |
+          set -euo pipefail
+          VERSION="$BASE_VERSION"
+          HEAD_BRANCH=main WORKFLOW_EVENT=push
+          export VERSION RC_NUMBER HEAD_BRANCH WORKFLOW_EVENT
+          mapfile -t _dev_kv < <(bash scripts/compute-dev-tag.sh)
+          DEV_VERSION="${_dev_kv[0]#version=}"
+          TAG="${_dev_kv[1]#tag=}"
+          git reset --hard "$BASE_SHA"
+          SYNTHETIC_SHA=$(bash scripts/create-dev-version-commit.sh "$DEV_VERSION")
+          export COMMIT_SHA="$SYNTHETIC_SHA" TAG
+          {
+            echo "> [!WARNING]"
+            echo "> **Release-candidate** for upcoming **v${BASE_VERSION}** (\`${DEV_VERSION}\`)."
+            echo ""
+            echo "## What's changed for v${BASE_VERSION}"
+            echo ""
+            printf '%s\n' "${CHANGELOG:-_No user-facing changes detected._}"
+          } > rc-notes.md
+          git tag -f "$TAG" "$SYNTHETIC_SHA"
+          git push origin "refs/tags/${TAG}"
+          bash scripts/package-hacs-zip.sh example.zip
+          gh release create "$TAG" --prerelease --title "$TAG" --target "$SYNTHETIC_SHA" --notes-file rc-notes.md example.zip
+          bash scripts/verify-dev-release-target.sh

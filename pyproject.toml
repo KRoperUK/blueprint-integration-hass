@@ -1,6 +1,6 @@
 [project]
 name = "blueprint-integration-hass"
-version = "0.1.0"
+version = "0.2.0"
 description = "Blueprint Home Assistant custom integration"
 requires-python = ">=3.14"
 readme = "README.md"

@@ -5,19 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST
-from homeassistant.data_entry_flow import FlowResult
 
 from .const import DOMAIN
 
 
-class ExampleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ExampleConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Example."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:

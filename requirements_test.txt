@@ -1,5 +1,5 @@
 pytest-homeassistant-custom-component
 pytest-cov
 pytest-asyncio
-ruff==0.15.21
-mypy==1.15.0
+ruff==0.16.7
+mypy==2.3.1

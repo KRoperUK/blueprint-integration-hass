@@ -1,0 +1,47 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - "dependencies"
+      - "python"
+    ignore:
+      # pytest-homeassistant-custom-component pins its test tooling exactly
+      # (pytest-cov, pytest-sugar, pytest, pytest-asyncio), so any bump is
+      # unresolvable and would poison the whole python update group.
+      - dependency-name: "pytest"
+      - dependency-name: "pytest-asyncio"
+      - dependency-name: "pytest-cov"
+      - dependency-name: "pytest-sugar"
+    groups:
+      python:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"

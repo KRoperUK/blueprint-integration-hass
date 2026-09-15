@@ -15,9 +15,7 @@ from .coordinator import ExampleCoordinator
 PARALLEL_UPDATES = 0
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
-) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up Example sensors."""
     coordinator: ExampleCoordinator = entry.runtime_data
     async_add_entities([ExamplePowerSensor(coordinator, entry)])
@@ -50,7 +48,7 @@ class ExamplePowerSensor(CoordinatorEntity[ExampleCoordinator], SensorEntity):
             return None
         try:
             return float(point["value"])
-        except (TypeError, ValueError, KeyError):
+        except TypeError, ValueError, KeyError:
             return None
 
     @property

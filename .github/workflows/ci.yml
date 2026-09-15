@@ -13,6 +13,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Home Assistant 2026.8+ requires Python 3.14.
+  PYTHON_VERSION: "3.14"
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -20,10 +24,10 @@ jobs:
     outputs:
       component: ${{ steps.filter.outputs.component }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -42,11 +46,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
-      - run: pip install ruff mypy
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Installed at the pinned versions from requirements_test.txt so CI and
+      # pre-commit enforce the same ruleset.
+      - run: pip install "$(grep -E '^ruff==' requirements_test.txt)" "$(grep -E '^mypy==' requirements_test.txt)"
       - run: ruff check custom_components tests
       - run: ruff format --check custom_components tests
       - run: mypy
@@ -58,10 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
+          python-version: ${{ env.PYTHON_VERSION }}
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements_test.txt
@@ -73,8 +79,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: hacs/action@main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
       - uses: home-assistant/actions/hassfest@master
@@ -93,7 +99,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -202,7 +208,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0

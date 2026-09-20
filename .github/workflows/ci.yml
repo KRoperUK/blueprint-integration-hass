@@ -50,9 +50,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      # Installed at the pinned versions from requirements_test.txt so CI and
-      # pre-commit enforce the same ruleset.
-      - run: pip install "$(grep -E '^ruff==' requirements_test.txt)" "$(grep -E '^mypy==' requirements_test.txt)"
+      # requirements_test.txt pins ruff and mypy, and also pulls in Home
+      # Assistant — whose types mypy needs to resolve the integration's base
+      # classes. Installing only the tools makes mypy report every HA class as
+      # "cannot subclass value of type Any".
+      - run: pip install -r requirements_test.txt
       - run: ruff check custom_components tests
       - run: ruff format --check custom_components tests
       - run: mypy
@@ -83,7 +85,7 @@ jobs:
       - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
-      - uses: home-assistant/actions/hassfest@master
+      - uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93 # master
 
   # Semver pre-releases — see docs/pre-releases.md (ported from dimplex-controller-hass).
   dev-release:
@@ -105,7 +107,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@v6
+        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json
@@ -214,7 +216,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@v6
+        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json
@@ -291,3 +293,33 @@ jobs:
           bash scripts/package-hacs-zip.sh example.zip
           gh release create "$TAG" --prerelease --title "$TAG" --target "$SYNTHETIC_SHA" --notes-file rc-notes.md example.zip
           bash scripts/verify-dev-release-target.sh
+
+  # Aggregate gate. The component jobs above are path-filtered, so a docs-only
+  # or workflow-only change skips them and they report as "skipped" — which
+  # leaves a required-status-check on any one of them pending forever. This job
+  # always runs and is the single check branch protection should require.
+  ci:
+    name: ci
+    if: always()
+    needs: [changes, lint, test, hacs_validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate results
+        run: |
+          if [ "${{ needs.changes.outputs.component }}" != "true" ]; then
+            echo "No component changes; nothing to gate."
+            exit 0
+          fi
+          for result in \
+            "lint=${{ needs.lint.result }}" \
+            "test=${{ needs.test.result }}" \
+            "hacs_validate=${{ needs.hacs_validate.result }}"
+          do
+            name="${result%%=*}"
+            status="${result##*=}"
+            if [ "$status" != "success" ]; then
+              echo "::error::$name did not succeed ($status)"
+              exit 1
+            fi
+          done
+          echo "All required jobs succeeded."

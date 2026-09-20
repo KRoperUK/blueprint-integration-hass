@@ -85,7 +85,7 @@ jobs:
       - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
-      - uses: home-assistant/actions/hassfest@master
+      - uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93 # master
 
   # Semver pre-releases — see docs/pre-releases.md (ported from dimplex-controller-hass).
   dev-release:
@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@v6
+        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json
@@ -216,7 +216,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@v6
+        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json

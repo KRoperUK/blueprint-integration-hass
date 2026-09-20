@@ -1,14 +1,18 @@
 {
   "domain": "example",
   "name": "Example",
-  "codeowners": ["@KRoperUK"],
+  "codeowners": [
+    "@KRoperUK"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/KRoperUK/blueprint-integration-hass",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/KRoperUK/blueprint-integration-hass/issues",
-  "loggers": ["example_client"],
+  "loggers": [
+    "example_client"
+  ],
   "quality_scale": "bronze",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

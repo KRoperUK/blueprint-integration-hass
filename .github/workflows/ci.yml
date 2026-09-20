@@ -293,3 +293,33 @@ jobs:
           bash scripts/package-hacs-zip.sh example.zip
           gh release create "$TAG" --prerelease --title "$TAG" --target "$SYNTHETIC_SHA" --notes-file rc-notes.md example.zip
           bash scripts/verify-dev-release-target.sh
+
+  # Aggregate gate. The component jobs above are path-filtered, so a docs-only
+  # or workflow-only change skips them and they report as "skipped" — which
+  # leaves a required-status-check on any one of them pending forever. This job
+  # always runs and is the single check branch protection should require.
+  ci:
+    name: ci
+    if: always()
+    needs: [changes, lint, test, hacs_validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate results
+        run: |
+          if [ "${{ needs.changes.outputs.component }}" != "true" ]; then
+            echo "No component changes; nothing to gate."
+            exit 0
+          fi
+          for result in \
+            "lint=${{ needs.lint.result }}" \
+            "test=${{ needs.test.result }}" \
+            "hacs_validate=${{ needs.hacs_validate.result }}"
+          do
+            name="${result%%=*}"
+            status="${result##*=}"
+            if [ "$status" != "success" ]; then
+              echo "::error::$name did not succeed ($status)"
+              exit 1
+            fi
+          done
+          echo "All required jobs succeeded."

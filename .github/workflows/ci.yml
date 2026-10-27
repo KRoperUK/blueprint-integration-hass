@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       # requirements_test.txt pins ruff and mypy, and also pulls in Home
@@ -67,7 +67,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: |
@@ -85,7 +85,7 @@ jobs:
       - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
-      - uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93 # master
+      - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master
 
   # Semver pre-releases — see docs/pre-releases.md (ported from dimplex-controller-hass).
   dev-release:
@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
+        uses: TriPSs/conventional-changelog-action@469f0e5e35831fbd1962706f29f65daf0a5723f2 # v6.5.0
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json
@@ -216,7 +216,7 @@ jobs:
           fetch-depth: 0
       - name: Compute next version
         id: nextver
-        uses: TriPSs/conventional-changelog-action@ee43def3241429afddab215ba89090cbf64fb45c # v6
+        uses: TriPSs/conventional-changelog-action@469f0e5e35831fbd1962706f29f65daf0a5723f2 # v6.5.0
         with:
           github-token: ${{ github.token }}
           version-file: custom_components/example/manifest.json
